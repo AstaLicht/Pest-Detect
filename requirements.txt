@@ -1,7 +1,9 @@
+fastapi
+uvicorn
 gspread
-oauth2client
-pandas
-scikit-learn
 joblib
+numpy
+pandas
 python-dotenv
+oauth2client
 schedule

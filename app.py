@@ -13,17 +13,17 @@ from schedule import every, run_pending
 load_dotenv()
 
 class PestDetectionSystem:
-    def __init__(self):
+    def _init_(self):
         # Load ML model with absolute path
         self.model = self.load_model(
-            os.path.join(os.path.dirname(__file__), 'models', 'pest_detector_model_2.pkl')
+            os.path.join(os.path.dirname(_file_), 'models', 'pest_detector_model_2.pkl')
         )
         
         # Initialize Google Sheets connection
         self.scope = ['https://spreadsheets.google.com/feeds',
                      'https://www.googleapis.com/auth/drive']
         self.creds = ServiceAccountCredentials.from_json_keyfile_name(
-            os.path.join(os.path.dirname(__file__), 'config', 'credentials.json'), 
+            os.path.join(os.path.dirname(_file_), 'config', 'credentials.json'), 
             self.scope
         )
         self.client = gspread.authorize(self.creds)
@@ -124,7 +124,7 @@ class PestDetectionSystem:
         status = message or f"Processed at {timestamp}"
         self.sheet.update_cell(row_num, 10, status)
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     try:
         system = PestDetectionSystem()
         print("🚀 Pest Detection System Started")

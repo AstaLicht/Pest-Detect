@@ -1,0 +1,7 @@
+gspread
+oauth2client
+pandas
+scikit-learn
+joblib
+python-dotenv
+schedule

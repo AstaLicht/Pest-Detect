@@ -16,7 +16,7 @@ class PestDetectionSystem:
     def __init__(self):
         # Load ML model with absolute path
         self.model = self.load_model(
-            os.path.join(os.path.dirname(__file__), 'models', 'pest_detector_model.pkl')
+            os.path.join(os.path.dirname(__file__), 'models', 'pest_detector_model_2.pkl')
         )
         
         # Initialize Google Sheets connection

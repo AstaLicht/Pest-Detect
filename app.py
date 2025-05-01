@@ -14,64 +14,128 @@ load_dotenv()
 
 class PestDetectionSystem:
     def __init__(self):
-        self.model = joblib.load('models/pest_detector_model.pkl')
+        # Load ML model with absolute path
+        self.model = self.load_model(
+            os.path.join(os.path.dirname(__file__), 'models', 'pest_detector_model.pkl')
+        )
+        
+        # Initialize Google Sheets connection
         self.scope = ['https://spreadsheets.google.com/feeds',
                      'https://www.googleapis.com/auth/drive']
         self.creds = ServiceAccountCredentials.from_json_keyfile_name(
-            'config/credentials.json', self.scope)
+            os.path.join(os.path.dirname(__file__), 'config', 'credentials.json'), 
+            self.scope
+        )
         self.client = gspread.authorize(self.creds)
         self.sheet = self.client.open_by_key(os.getenv('SHEET_ID')).sheet1
 
-    def _preprocess_data(self, row):
-        """Convert sheet row to model input format"""
-        return np.array([
-            float(row[1]),  # Moisture_Sensor
-            float(row[2]),  # Humidity
-            float(row[3]),  # Temperature
-            float(row[4]),  # Infrared_Sensor
-            float(row[5]),  # Motion_Sensor
-            float(row[6]),  # Vibration_Sensor
-            float(row[7])   # Gas_Sensor
-        ]).reshape(1, -1)
+    def load_model(self, model_path):
+        """Load trained ML model with error handling"""
+        try:
+            return joblib.load(model_path)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model: {str(e)}")
 
     def process_new_entries(self):
-        """Check for new rows and make predictions"""
-        records = self.sheet.get_all_records()
-        df = pd.DataFrame(records)
-        
-        if 'Prediction' not in df.columns:
-            self.sheet.insert_cols([['Prediction']], len(df.columns)+1)
-            self.sheet.insert_cols([['Processed']], len(df.columns)+1)
-            time.sleep(2)  # Wait for sheet update
-            return
+        """Main processing loop for new sensor data"""
+        try:
+            records = self.sheet.get_all_records()
+            df = pd.DataFrame(records)
+            
+            # Initialize columns if missing
+            self.ensure_columns_exist()
+            
+            # Process unmarked rows
+            unprocessed = df[df['Processed'].astype(str) == '']
+            for idx in unprocessed.index:
+                self.process_row(idx + 2)  # +2 for header and 1-based index
+                
+        except Exception as e:
+            print(f"Processing error: {str(e)}")
 
-        unprocessed = df[df['Processed'].astype(str) == '']
+    def ensure_columns_exist(self):
+        """Ensure required columns exist in the sheet"""
+        header = self.sheet.row_values(1)
+        required_cols = ['Processed', 'Prediction']
+        updates = False
         
-        for idx in unprocessed.index:
-            row_num = idx + 2  # Sheets are 1-indexed + header row
-            try:
-                row_data = self.sheet.row_values(row_num)
-                features = self._preprocess_data(row_data)
-                prediction = self.model.predict(features)[0]
-                confidence = self.model.predict_proba(features)[0][1]
+        for col in required_cols:
+            if col not in header:
+                self.sheet.insert_cols([col], len(header)+1)
+                header.append(col)
+                updates = True
+                time.sleep(1)  # Rate limit
                 
-                # Update prediction and processing status
-                self.sheet.update_cell(row_num, len(row_data)+1, 
-                    'Pest Detected' if prediction == 1 else 'No Pest')
-                self.sheet.update_cell(row_num, len(row_data)+2, 
-                    f'Processed at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
-                
-            except Exception as e:
-                print(f"Error processing row {row_num}: {e}")
-                self.sheet.update_cell(row_num, len(row_data)+2, f'Error: {str(e)}')
+        if updates:
+            print("Added missing columns")
+
+    def process_row(self, row_num):
+        """Process individual sensor data row"""
+        try:
+            row_data = self.sheet.row_values(row_num)
+            features = self.extract_features(row_data)
+            
+            if not features:
+                self.mark_processed(row_num, "Invalid data")
+                return
+
+            prediction = self.model.predict([features])[0]
+            confidence = self.get_confidence(features)
+            
+            self.update_sheet(row_num, prediction, confidence)
+            
+        except Exception as e:
+            self.mark_processed(row_num, f"Error: {str(e)}")
+            print(f"Row {row_num} error: {str(e)}")
+
+    def extract_features(self, row_data):
+        """Convert sheet row to feature vector"""
+        try:
+            return [
+                float(row_data[1]),  # Moisture_Sensor
+                float(row_data[2]),  # Humidity
+                float(row_data[3]),  # Temperature
+                float(row_data[4]),  # Infrared_Sensor
+                float(row_data[5]),  # Motion_Sensor
+                float(row_data[6]),  # Vibration_Sensor
+                float(row_data[7])   # Gas_Sensor
+            ]
+        except (IndexError, ValueError):
+            return None
+
+    def get_confidence(self, features):
+        """Get prediction confidence score"""
+        if hasattr(self.model, 'predict_proba'):
+            return round(100 * max(self.model.predict_proba([features])[0]), 2)
+        return None
+
+    def update_sheet(self, row_num, prediction, confidence):
+        """Update Google Sheet with results"""
+        prediction_text = f"{'Pest Detected' if prediction == 1 else 'No Pest'}"
+        if confidence:
+            prediction_text += f" ({confidence}%)"
+            
+        self.sheet.update_cell(row_num, 9, prediction_text)
+        self.mark_processed(row_num)
+
+    def mark_processed(self, row_num, message=None):
+        """Mark row as processed"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status = message or f"Processed at {timestamp}"
+        self.sheet.update_cell(row_num, 10, status)
 
 if __name__ == "__main__":
-    system = PestDetectionSystem()
-    
-    # Run every 5 minutes
-    every(5).minutes.do(system.process_new_entries)
-    
-    print("🚀 Pest Detection System Started")
-    while True:
-        run_pending()
-        time.sleep(1)
+    try:
+        system = PestDetectionSystem()
+        print("🚀 Pest Detection System Started")
+        
+        # Run every 2 minutes
+        every(2).minutes.do(system.process_new_entries)
+        
+        while True:
+            run_pending()
+            time.sleep(1)
+            
+    except Exception as e:
+        print(f"Fatal error: {str(e)}")
+        exit(1)

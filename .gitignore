@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+_pycache_/
+*.py[cod]
+*.so
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Credentials and config
+*.env
+config/credentials.json
+
+# Model files
+*.pkl
+*.joblib
+
+# Logs and data
+*.log
+*.csv
+
+# Jupyter Notebooks checkpoints
+.ipynb_checkpoints/
+
+# MacOS system files
+.DS_Store
+
+# VSCode settings
+.vscode/
+
+# Render-specific files (if any secrets)
+render.yaml
